@@ -1,0 +1,187 @@
+---
+title: "NYPD Shooting Incident"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Deccription
+
+Shooting incident data in New York Since 2006.
+
+### Source
+
+<https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD>
+
+
+## Add Library
+
+and library which needed
+
+```{r add_lib, message=FALSE}
+library(tidyverse)
+```
+
+## Import Data
+
+Import data from website
+
+```{r import_data}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+## Read Data
+
+Read data from csv
+
+```{r read_data}
+data <- read.csv(url)
+```
+
+## Clean Up Data
+
+Select only focus columns and formatting date
+
+```{r clean_data}
+data <- data %>%
+  select(OCCUR_DATE, BORO, STATISTICAL_MURDER_FLAG) %>%
+  mutate(date = as.Date(OCCUR_DATE, "%m/%d/%Y")) %>%
+  select(-c(OCCUR_DATE))
+```
+
+Show summary to check if there is missing data.
+
+```{r show_summary}
+summary(data)
+```
+
+If there is missing BORO data label as unknown
+
+```{r missing_data}
+data <- data %>% mutate(BORO = ifelse(BORO != "", BORO, "unknown"))
+```
+
+
+## Group Data By Area
+
+Group data by date and area. Then, count number of case and murder case
+
+```{r transform_data}
+area <- data %>% mutate(cases = 1,
+                        murder_cases = ifelse(STATISTICAL_MURDER_FLAG == "true", 1, 0)) %>%
+  group_by(date, BORO) %>%
+  summarize(cases = sum(cases),
+            murder_cases = sum(murder_cases))
+```
+
+## Transform Data
+
+prepare data for visualization
+
+### Total NY Case
+
+```{r NY_case}
+NY_total <- area %>% group_by(date) %>%
+  summarize(cases = sum(cases),
+            murder_cases = sum(murder_cases)) %>%
+  mutate(cases = cumsum(cases),
+         murder_cases = cumsum(murder_cases)) %>%
+  mutate(murder_percent = murder_cases/cases*100)
+```
+
+### Queens Case
+
+```{r queens_case}
+queens_case <- area %>% filter(BORO == 'QUEENS') %>%
+  select(-c(BORO)) %>%
+  ungroup %>%
+  mutate(cases = cumsum(cases),
+         murder_cases = cumsum(murder_cases)) %>%
+  mutate(murder_percent = murder_cases/cases*100)
+```
+
+## visualizations
+
+New York cases
+
+```{r NY_plot, echo=FALSE}
+NY_total %>%
+  ggplot(aes(x = date, y = murder_percent)) +
+  geom_line(aes(color = "murder_percent")) +
+  geom_point(aes(color = "murder_percent")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "NY murder case ratio", y = NULL)
+```
+
+New York cases since 2007
+
+```{r NY_2007_plot, echo=FALSE}
+NY_total %>% filter(date > "2007-01-01") %>%
+  ggplot(aes(x = date, y = murder_percent)) +
+  geom_line(aes(color = "murder_percent")) +
+  geom_point(aes(color = "murder_percent")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "NY murder case ratio", y = NULL)
+```
+
+cases in Queens since 2007
+
+```{r queens_plot, echo=FALSE}
+queens_case %>% filter(date > "2007-01-01") %>%
+  ggplot(aes(x = date, y = murder_percent)) +
+  geom_line(aes(color = "murder_percent")) +
+  geom_point(aes(color = "murder_percent")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Queens murder case ratio", y = NULL)
+```
+
+## Modeling
+
+Create model for predict murder cases by cases
+
+
+```{r model}
+mod <- lm(murder_cases ~ cases, data = NY_total)
+```
+
+Predict murder cases with model
+
+```{r predict}
+NY_total <- NY_total %>% mutate(predict = predict(mod))
+```
+
+Plot predict result
+
+```{r predict_plot, echo=FALSE}
+NY_total %>% ggplot() +
+  geom_point(aes(x= cases, y = murder_cases, color = "actual")) +
+  geom_point(aes(x= cases, y = predict, color = "predicted")) +
+  theme(legend.position = "bottom") +
+  labs(title = "murder cases from all cases", y = NULL)
+```
+
+
+## Analysis
+
+As you can see from graph 2 (NY cases since 2007) murder rate decrease until 2015. Since 2015 to 2020 murder rate is stable around 19%. But, if you look at graph 3 (Queens cases since 2007) rate is decrease from 2007 then stable at about 18.3% for a while. Until 2010 murder rate is increase to 19-20%.
+
+From this information, I thinks there was something happened in Queens around 2010 which cause murder rate in Queens not keep decreasing until 2015 as same as overall New York City.
+
+
+## conclusion
+
+New York murder rate overall decrease compare to 2007. But in Queens is difference.
+
+### Bias
+
+Bias of this analysis might be how I calculate murder percentage. Because in very early date there are only few case to calculate compare to latest date. As you can see there is 50% murder rate in graph 1 (NY cases since 2006). So, I prevent this by using data since 2007 which I assumes 2007 have enough cases.
+
+Also, there's personal bias That race dose not effect murder rate at all. I just looked back what is impression with the data and I found that I remove columns about race out because my bias. actually it might be a variable which effect murder rate.
+
